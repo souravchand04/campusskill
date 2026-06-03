@@ -42,6 +42,9 @@ router.get('/:id/assessments/mcq', authenticate, courseController.getMcqTests);
 router.post('/:id/assessments/mcq', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.addMcqTest);
 router.put('/:id/assessments/mcq/:mcqId', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.updateMcqTest);
 router.delete('/:id/assessments/mcq/:mcqId', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.deleteMcqTest);
+router.post('/:id/assessments/mcq/:mcqId/questions', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.addMcqQuestion);
+router.put('/:id/assessments/mcq/:mcqId/questions/:questionId', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.updateMcqQuestion);
+router.delete('/:id/assessments/mcq/:mcqId/questions/:questionId', authenticate, authorize('super_admin', 'college_admin', 'trainer'), courseController.deleteMcqQuestion);
 
 // Coding Assessment routes
 router.get('/:id/assessments/coding', authenticate, courseController.getCodingAssessments);

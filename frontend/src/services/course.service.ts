@@ -88,6 +88,15 @@ export const courseService = {
   deleteMcqTest: (courseId: string, mcqId: string) =>
     api.delete<ApiResponse<null>>(`/courses/${courseId}/assessments/mcq/${mcqId}`),
 
+  addMcqQuestion: (courseId: string, mcqId: string, payload: Record<string, unknown>) =>
+    api.post<ApiResponse<any>>(`/courses/${courseId}/assessments/mcq/${mcqId}/questions`, payload),
+
+  updateMcqQuestion: (courseId: string, mcqId: string, questionId: string, payload: Record<string, unknown>) =>
+    api.put<ApiResponse<any>>(`/courses/${courseId}/assessments/mcq/${mcqId}/questions/${questionId}`, payload),
+
+  deleteMcqQuestion: (courseId: string, mcqId: string, questionId: string) =>
+    api.delete<ApiResponse<null>>(`/courses/${courseId}/assessments/mcq/${mcqId}/questions/${questionId}`),
+
   // Coding Assessment endpoints
   getCodingAssessments: (id: string) =>
     api.get<ApiResponse<any[]>>(`/courses/${id}/assessments/coding`),

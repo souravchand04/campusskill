@@ -266,6 +266,16 @@ export default function EditCoursePage() {
   const [mcqFormPassingScore, setMcqFormPassingScore] = React.useState('40');
   const [savingMcq, setSavingMcq] = React.useState(false);
 
+  // MCQ Question management state
+  const [questionDialogOpen, setQuestionDialogOpen] = React.useState(false);
+  const [activeMcqForQuestions, setActiveMcqForQuestions] = React.useState<any>(null);
+  const [editingQuestion, setEditingQuestion] = React.useState<any>(null);
+  const [questionFormText, setQuestionFormText] = React.useState('');
+  const [questionFormPoints, setQuestionFormPoints] = React.useState('1');
+  const [questionFormType, setQuestionFormType] = React.useState<'single' | 'multiple'>('single');
+  const [questionFormOptions, setQuestionFormOptions] = React.useState<Array<{ text: string; isCorrect: boolean }>>([]);
+  const [savingQuestion, setSavingQuestion] = React.useState(false);
+
   // Coding Assessment state
   const [codingAssessments, setCodingAssessments] = React.useState<any[]>([]);
   const [codingDialogOpen, setCodingDialogOpen] = React.useState(false);
@@ -623,6 +633,86 @@ export default function EditCoursePage() {
       await refreshMcqTests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete MCQ test');
+    }
+  };
+
+  // ---- MCQ Question CRUD ----
+
+  const openAddQuestion = () => {
+    setEditingQuestion(null);
+    setQuestionFormText('');
+    setQuestionFormPoints('1');
+    setQuestionFormType('single');
+    setQuestionFormOptions([{ text: '', isCorrect: false }, { text: '', isCorrect: false }]);
+  };
+
+  const openEditQuestion = (q: any) => {
+    setEditingQuestion(q);
+    setQuestionFormText(q.text || '');
+    setQuestionFormPoints(String(q.marks ?? 1));
+    setQuestionFormType(q.questionType || 'single');
+    setQuestionFormOptions((q.options || []).map((o: any) => ({ text: o.text, isCorrect: o.isCorrect })));
+  };
+
+  const addOptionField = () => {
+    setQuestionFormOptions([...questionFormOptions, { text: '', isCorrect: false }]);
+  };
+
+  const removeOptionField = (idx: number) => {
+    if (questionFormOptions.length <= 2) return;
+    setQuestionFormOptions(questionFormOptions.filter((_, i) => i !== idx));
+  };
+
+  const updateOption = (idx: number, field: 'text' | 'isCorrect', value: string | boolean) => {
+    const updated = [...questionFormOptions];
+    if (field === 'isCorrect' && questionFormType === 'single') {
+      updated.forEach((o, i) => { o.isCorrect = i === idx; });
+    } else {
+      (updated[idx] as any)[field] = value;
+    }
+    setQuestionFormOptions(updated);
+  };
+
+  const saveQuestion = async () => {
+    if (!questionFormText.trim()) { toast.error('Question text is required'); return; }
+    const validOptions = questionFormOptions.filter((o) => o.text.trim());
+    if (validOptions.length < 2) { toast.error('At least 2 options with text are required'); return; }
+    if (!validOptions.some((o) => o.isCorrect)) { toast.error('At least one correct answer is required'); return; }
+    if (!activeMcqForQuestions) return;
+    try {
+      setSavingQuestion(true);
+      const payload = {
+        questionText: questionFormText.trim(),
+        points: Number(questionFormPoints) || 1,
+        options: validOptions.map((o) => ({ text: o.text.trim(), isCorrect: o.isCorrect })),
+      };
+      const mcqId = activeMcqForQuestions._id || activeMcqForQuestions.id;
+      if (editingQuestion) {
+        await courseService.updateMcqQuestion(courseId, mcqId, editingQuestion.id, payload);
+        toast.success('Question updated');
+      } else {
+        await courseService.addMcqQuestion(courseId, mcqId, payload);
+        toast.success('Question added');
+      }
+      setQuestionDialogOpen(false);
+      await refreshMcqTests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save question');
+    } finally {
+      setSavingQuestion(false);
+    }
+  };
+
+  const deleteQuestion = async (questionId: string) => {
+    if (!confirm('Delete this question?')) return;
+    if (!activeMcqForQuestions) return;
+    try {
+      const mcqId = activeMcqForQuestions._id || activeMcqForQuestions.id;
+      await courseService.deleteMcqQuestion(courseId, mcqId, questionId);
+      toast.success('Question deleted');
+      await refreshMcqTests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete question');
     }
   };
 
@@ -1351,6 +1441,9 @@ export default function EditCoursePage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
+                        <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setActiveMcqForQuestions(t); openAddQuestion(); setQuestionDialogOpen(true); }}>
+                          Questions
+                        </Button>
                         <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditMcq(t)}>
                           <Edit className="h-3.5 w-3.5" />
                         </Button>
@@ -1726,6 +1819,151 @@ export default function EditCoursePage() {
                 <Button type="button" variant="outline" onClick={() => setMcqDialogOpen(false)}>Cancel</Button>
                 <Button type="button" onClick={saveMcq} disabled={savingMcq}>
                   {savingMcq ? 'Saving...' : editingMcq ? 'Update' : 'Add'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* MCQ Question Dialog */}
+          <Dialog open={questionDialogOpen} onOpenChange={(open) => { if (!open) { setQuestionDialogOpen(false); setActiveMcqForQuestions(null); } }}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {activeMcqForQuestions?.title ? `Questions: ${activeMcqForQuestions.title}` : 'Manage Questions'}
+                </DialogTitle>
+                <DialogDescription>
+                  Add, edit or remove questions and options for this MCQ test
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+                {/* Existing questions */}
+                {activeMcqForQuestions && (activeMcqForQuestions.questions || []).length > 0 && (
+                  <div className="space-y-3">
+                    {(activeMcqForQuestions.questions || []).map((q: any, qi: number) => (
+                      <div key={q.id} className="rounded-lg border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">
+                              {qi + 1}. {q.text}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Marks: {q.marks}</p>
+                            <ul className="mt-1 space-y-0.5">
+                              {(q.options || []).map((o: any, oi: number) => (
+                                <li key={oi} className={`text-xs ${o.isCorrect ? 'text-green-600 font-medium' : 'text-muted-foreground'}`}>
+                                  {o.isCorrect ? '✓ ' : ''}{o.text}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditQuestion(q)}>
+                              <Edit className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteQuestion(q.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(!activeMcqForQuestions || !(activeMcqForQuestions.questions || []).length) && (
+                  <p className="text-sm text-muted-foreground text-center py-4">No questions yet. Add one below.</p>
+                )}
+                <Separator />
+                {/* Add/Edit question form */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold">{editingQuestion ? 'Edit Question' : 'Add New Question'}</h4>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Question Text</label>
+                    <Textarea
+                      placeholder="Enter the question"
+                      value={questionFormText}
+                      onChange={(e) => setQuestionFormText(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Points</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={questionFormPoints}
+                        onChange={(e) => setQuestionFormPoints(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Type</label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                        value={questionFormType}
+                        onChange={(e) => {
+                          const newType = e.target.value as 'single' | 'multiple';
+                          setQuestionFormType(newType);
+                          if (newType === 'single') {
+                            const hasCorrect = questionFormOptions.some((o) => o.isCorrect);
+                            if (hasCorrect) {
+                              const firstCorrect = questionFormOptions.findIndex((o) => o.isCorrect);
+                              setQuestionFormOptions(questionFormOptions.map((o, i) => ({ ...o, isCorrect: i === firstCorrect })));
+                            }
+                          }
+                        }}
+                      >
+                        <option value="single">Single Choice</option>
+                        <option value="multiple">Multiple Choice</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Options</label>
+                      <Button type="button" variant="outline" size="sm" onClick={addOptionField}>
+                        <Plus className="mr-1 h-3 w-3" />Add Option
+                      </Button>
+                    </div>
+                    {questionFormOptions.map((opt, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${opt.isCorrect ? 'bg-green-600 border-green-600 text-white' : 'border-input'}`}
+                          onClick={() => updateOption(idx, 'isCorrect', !opt.isCorrect)}
+                        >
+                          {opt.isCorrect && '✓'}
+                        </button>
+                        <Input
+                          placeholder={`Option ${idx + 1}`}
+                          value={opt.text}
+                          onChange={(e) => updateOption(idx, 'text', e.target.value)}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                          disabled={questionFormOptions.length <= 2}
+                          onClick={() => removeOptionField(idx)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => { setEditingQuestion(null); setQuestionFormText(''); setQuestionFormPoints('1'); setQuestionFormOptions([{ text: '', isCorrect: false }, { text: '', isCorrect: false }]); }}>
+                      Clear
+                    </Button>
+                    <Button type="button" size="sm" onClick={saveQuestion} disabled={savingQuestion}>
+                      {savingQuestion ? 'Saving...' : editingQuestion ? 'Update Question' : 'Add Question'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => { setQuestionDialogOpen(false); setActiveMcqForQuestions(null); }}>
+                  Close
                 </Button>
               </DialogFooter>
             </DialogContent>

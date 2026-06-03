@@ -304,11 +304,39 @@ export class CourseController {
       if (req.body.passingScore !== undefined) data.passingScore = req.body.passingScore;
       if (req.body.totalQuestions !== undefined) data.totalQuestions = req.body.totalQuestions;
       if (req.body.scheduledAt !== undefined) data.scheduledAt = req.body.scheduledAt ? new Date(req.body.scheduledAt) : null;
+      const questions = req.body.questions as Array<{ questionText: string; questionType?: string; points?: number; explanation?: string; options: Array<{ text: string; isCorrect: boolean }> }> | undefined;
+      if (questions) {
+        data.totalQuestions = questions.length;
+      }
       const test = await container.prisma.mCQTest.update({
         where: { id: req.params.mcqId as string },
         data,
       });
-      res.status(200).json({ success: true, data: { ...test, _id: test.id } });
+      if (questions) {
+        await container.prisma.mCQQuestion.deleteMany({ where: { testId: req.params.mcqId as string } });
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i];
+          await container.prisma.mCQQuestion.create({
+            data: {
+              text: q.questionText,
+              marks: q.points ?? 1,
+              order: i + 1,
+              testId: req.params.mcqId as string,
+              options: {
+                create: q.options.map((o) => ({
+                  text: o.text,
+                  isCorrect: o.isCorrect ?? false,
+                })),
+              },
+            },
+          });
+        }
+      }
+      const updated = await container.prisma.mCQTest.findUnique({
+        where: { id: req.params.mcqId as string },
+        include: { questions: { include: { options: true }, orderBy: { order: 'asc' } } },
+      });
+      res.status(200).json({ success: true, data: { ...updated, _id: updated!.id } });
     } catch (error) {
       next(error);
     }
@@ -325,7 +353,8 @@ export class CourseController {
 
   addMcqQuestion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { mcqId } = req.params;
+      const mcqId = req.params.mcqId as string;
+      const courseId = req.params.id as string;
       const { questionText, questionType, points, explanation, options } = req.body;
       const lastQuestion = await container.prisma.mCQQuestion.findFirst({
         where: { testId: mcqId },
@@ -358,7 +387,9 @@ export class CourseController {
 
   updateMcqQuestion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { mcqId, questionId } = req.params;
+      const mcqId = req.params.mcqId as string;
+      const questionId = req.params.questionId as string;
+      const courseId = req.params.id as string;
       const { questionText, points, explanation, options } = req.body;
       const question = await container.prisma.mCQQuestion.update({
         where: { id: questionId },
@@ -390,7 +421,9 @@ export class CourseController {
 
   deleteMcqQuestion = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { mcqId, questionId } = req.params;
+      const mcqId = req.params.mcqId as string;
+      const questionId = req.params.questionId as string;
+      const courseId = req.params.id as string;
       await container.prisma.mCQQuestion.delete({ where: { id: questionId } });
       await container.prisma.mCQTest.update({
         where: { id: mcqId },
